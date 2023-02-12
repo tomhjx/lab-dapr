@@ -1,0 +1,93 @@
+version: '3.8'
+services:
+
+  app-rpc-c:
+    image: golang:1.20-alpine
+    command: ["go", "run", "./"]
+    working_dir: /app
+    environment:
+      TZ: 'Asia/Shanghai'
+    volumes:
+      - ./rpc/client:/app
+      - ~/Work/workspace/go:/go
+    depends_on:
+      - app-rpc-s-dapr
+
+  app-rpc-c-dapr:
+    image: daprio/daprd:edge
+    command: [
+      "./daprd",
+     "--app-id", "app-rpc-c",
+     "--placement-host-address", "placement.dapr.lab.local:50006", # Dapr's placement service can be reach via the docker DNS entry
+     "--components-path", "./components"
+     ]
+    cap_add:
+      - ALL
+    environment:
+      TZ: 'Asia/Shanghai'
+    volumes:
+        - "./components/:/components" # Mount our components folder for the runtime to use. The mounted location must match the --components-path argument.
+    depends_on:
+      - app-rpc-c
+    network_mode: "service:app-rpc-c"
+
+
+  app-rpc-s:
+    image: golang:1.20-alpine
+    environment:
+      TZ: 'Asia/Shanghai'
+    # ports:
+      # - "50001:50001" # Dapr instances communicate over gRPC so we need to expose the gRPC port
+    command: ["go", "run", "./"]
+    restart: always
+    working_dir: /app
+    volumes:
+      - ./rpc/server:/app
+      - ~/Work/workspace/go:/go      
+    depends_on:
+      - placement
+    networks:
+        default:
+          aliases:
+            - app-rpc-s.lab.local
+
+  app-rpc-s-dapr:
+    image: daprio/daprd:edge
+    environment:
+      TZ: 'Asia/Shanghai'
+    command: [
+      "./daprd",
+     "--app-id", "app-rpc-s",
+     "--app-port", "81",
+     "--dapr-http-port", "80",
+     "--placement-host-address", "placement.dapr.lab.local:50006", # Dapr's placement service can be reach via the docker DNS entry
+     "--components-path", "./components"
+     ]
+    cap_add:
+      - ALL
+    volumes:
+        - "./components/:/components" # Mount our components folder for the runtime to use. The mounted location must match the --components-path argument.
+    depends_on:
+      - app-rpc-s
+    network_mode: "service:app-rpc-s"
+
+  placement:
+    image: "daprio/dapr"
+    environment:
+      TZ: 'Asia/Shanghai'
+    command: ["./placement", "--port", "50006"]
+    networks:
+        default:
+          aliases:
+            - placement.dapr.lab.local
+  dapr-redis:
+    image: "redis:alpine"
+    environment:
+      TZ: 'Asia/Shanghai'
+    networks:
+        default:
+          aliases:
+            - dapr.redis.lab.local
+networks:
+  default:
+    name: lab
